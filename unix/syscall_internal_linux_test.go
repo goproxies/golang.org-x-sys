@@ -157,6 +157,18 @@ func Test_anyToSockaddr(t *testing.T) {
 			},
 		},
 		{
+			name: "AF_IUCV",
+			rsa: sockaddrIUCVToAny(RawSockaddrIUCV{
+				Family:  AF_IUCV,
+				User_id: [8]int8{'*', 'M', 'S', 'G', ' ', ' ', ' ', ' '},
+				Name:    [8]int8{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+			}),
+			sa: &SockaddrIUCV{
+				UserID: "*MSG    ",
+				Name:   "        ",
+			},
+		},
+		{
 			name: "AF_MAX EAFNOSUPPORT",
 			rsa: &RawSockaddrAny{
 				Addr: RawSockaddr{
@@ -462,6 +474,76 @@ func TestSockaddrUnix_sockaddr(t *testing.T) {
 	}
 }
 
+func TestSockaddrIUCV_sockaddr(t *testing.T) {
+	tests := []struct {
+		name string
+		sa   *SockaddrIUCV
+		raw  *RawSockaddrIUCV
+		err  error
+	}{
+		{
+			name: "no fields set",
+			sa:   &SockaddrIUCV{},
+			raw: &RawSockaddrIUCV{
+				Family:  AF_IUCV,
+				Nodeid:  [8]int8{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+				User_id: [8]int8{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+				Name:    [8]int8{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+			},
+		},
+		{
+			name: "both fields set",
+			sa: &SockaddrIUCV{
+				UserID: "USERID",
+				Name:   "NAME",
+			},
+			raw: &RawSockaddrIUCV{
+				Family:  AF_IUCV,
+				Nodeid:  [8]int8{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
+				User_id: [8]int8{'U', 'S', 'E', 'R', 'I', 'D', ' ', ' '},
+				Name:    [8]int8{'N', 'A', 'M', 'E', ' ', ' ', ' ', ' '},
+			},
+		},
+		{
+			name: "too long userid",
+			sa: &SockaddrIUCV{
+				UserID: "123456789",
+			},
+			err: EINVAL,
+		},
+		{
+			name: "too long name",
+			sa: &SockaddrIUCV{
+				Name: "123456789",
+			},
+			err: EINVAL,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, l, err := tt.sa.sockaddr()
+			if err != tt.err {
+				t.Fatalf("unexpected error: %v, want: %v", err, tt.err)
+			}
+
+			// Must be 0 on error or a fixed size otherwise.
+			if (tt.err != nil && l != 0) || (tt.raw != nil && l != SizeofSockaddrIUCV) {
+				t.Fatalf("unexpected Socklen: %d", l)
+			}
+			if out == nil {
+				// No pointer to cast, return early.
+				return
+			}
+
+			raw := (*RawSockaddrIUCV)(out)
+			if !reflect.DeepEqual(raw, tt.raw) {
+				t.Fatalf("unexpected RawSockaddrIUCV:\n got: %#v\nwant: %#v", raw, tt.raw)
+			}
+		})
+	}
+}
+
 // These helpers explicitly copy the contents of in into out to produce
 // the correct sockaddr structure, without relying on unsafe casting to
 // a type of a larger size.
@@ -494,14 +576,18 @@ func sockaddrL2TPIP6ToAny(in RawSockaddrL2TPIP6) *RawSockaddrAny {
 
 func sockaddrUnixToAny(in RawSockaddrUnix) *RawSockaddrAny {
 	var out RawSockaddrAny
-
-	// Explicitly copy the contents of in into out to produce the correct
-	// sockaddr structure, without relying on unsafe casting to a type of a
-	// larger size.
 	copy(
 		(*(*[SizeofSockaddrAny]byte)(unsafe.Pointer(&out)))[:],
 		(*(*[SizeofSockaddrUnix]byte)(unsafe.Pointer(&in)))[:],
 	)
+	return &out
+}
 
+func sockaddrIUCVToAny(in RawSockaddrIUCV) *RawSockaddrAny {
+	var out RawSockaddrAny
+	copy(
+		(*(*[SizeofSockaddrAny]byte)(unsafe.Pointer(&out)))[:],
+		(*(*[SizeofSockaddrUnix]byte)(unsafe.Pointer(&in)))[:],
+	)
 	return &out
 }
