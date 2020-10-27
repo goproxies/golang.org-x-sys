@@ -537,9 +537,12 @@ func TestSelect(t *testing.T) {
 	}
 
 	dur := 250 * time.Millisecond
-	tv := unix.NsecToTimeval(int64(dur))
 	var took time.Duration
 	for {
+		// On some platforms (e.g. Linux), the passed-in timeval is
+		// updated by select(2). Make sure to reset to the full duration
+		// in case of an EINTR.
+		tv := unix.NsecToTimeval(int64(dur))
 		start := time.Now()
 		n, err := unix.Select(0, nil, nil, nil, &tv)
 		took = time.Since(start)
@@ -653,6 +656,27 @@ func TestGetwd(t *testing.T) {
 	}
 }
 
+func compareStat_t(t *testing.T, otherStat string, st1, st2 *unix.Stat_t) {
+	if st2.Dev != st1.Dev {
+		t.Errorf("%s/Fstatat: got dev %v, expected %v", otherStat, st2.Dev, st1.Dev)
+	}
+	if st2.Ino != st1.Ino {
+		t.Errorf("%s/Fstatat: got ino %v, expected %v", otherStat, st2.Ino, st1.Ino)
+	}
+	if st2.Mode != st1.Mode {
+		t.Errorf("%s/Fstatat: got mode %v, expected %v", otherStat, st2.Mode, st1.Mode)
+	}
+	if st2.Uid != st1.Uid {
+		t.Errorf("%s/Fstatat: got uid %v, expected %v", otherStat, st2.Uid, st1.Uid)
+	}
+	if st2.Gid != st1.Gid {
+		t.Errorf("%s/Fstatat: got gid %v, expected %v", otherStat, st2.Gid, st1.Gid)
+	}
+	if st2.Size != st1.Size {
+		t.Errorf("%s/Fstatat: got size %v, expected %v", otherStat, st2.Size, st1.Size)
+	}
+}
+
 func TestFstatat(t *testing.T) {
 	defer chtmpdir(t)()
 
@@ -670,9 +694,7 @@ func TestFstatat(t *testing.T) {
 		t.Fatalf("Fstatat: %v", err)
 	}
 
-	if st1 != st2 {
-		t.Errorf("Fstatat: returned stat does not match Stat")
-	}
+	compareStat_t(t, "Stat", &st1, &st2)
 
 	err = os.Symlink("file1", "symlink1")
 	if err != nil {
@@ -689,24 +711,7 @@ func TestFstatat(t *testing.T) {
 		t.Fatalf("Fstatat: %v", err)
 	}
 
-	if st2.Dev != st1.Dev {
-		t.Errorf("Fstatat: got dev %v, expected %v", st2.Dev, st1.Dev)
-	}
-	if st2.Ino != st1.Ino {
-		t.Errorf("Fstatat: got ino %v, expected %v", st2.Ino, st1.Ino)
-	}
-	if st2.Mode != st1.Mode {
-		t.Errorf("Fstatat: got mode %v, expected %v", st2.Mode, st1.Mode)
-	}
-	if st2.Uid != st1.Uid {
-		t.Errorf("Fstatat: got uid %v, expected %v", st2.Uid, st1.Uid)
-	}
-	if st2.Gid != st1.Gid {
-		t.Errorf("Fstatat: got gid %v, expected %v", st2.Gid, st1.Gid)
-	}
-	if st2.Size != st1.Size {
-		t.Errorf("Fstatat: got size %v, expected %v", st2.Size, st1.Size)
-	}
+	compareStat_t(t, "Lstat", &st1, &st2)
 }
 
 func TestFchmodat(t *testing.T) {
